@@ -1,0 +1,155 @@
+---
+title: "Titanic Project"
+author: "Zhe Zhao"
+date: "4/25/2018"
+output:
+  pdf_document: default
+  word_document: default
+---
+
+```{r}
+Tdata <- read.delim2("Titanic.txt", header = T)
+attach(Tdata)
+summary(Tdata)
+m <- glm(Survived~Age+ Sex + PClass, family = binomial(link = "logit"))
+summary(m)
+Age.int <- as.integer(Tdata$Age)
+```
+```{r}
+#Visualization
+library(ggplot2)
+library(grid)
+library(gridExtra)
+s.class <- tapply(Survived, PClass, FUN = sum)
+death.class <- tapply(Survived == 0, PClass, FUN = length)
+p.class <- s.class/death.class
+  
+s.age <- tapply(Survived, Tdata$Age, FUN = sum)
+death.age <- tapply(Survived==0, Tdata$Age, FUN = length)
+p.age <- s.age/death.age
+
+s.sex <- tapply(Survived, Sex, FUN = sum)
+death.sex <- tapply(Survived == 0, Sex, FUN = length)
+p.sex <- s.sex/death.sex
+
+par(mfrow = c(2,2))
+
+```
+```{r}
+plot(log(p.class), xlab = "Class")
+```
+```{r}
+plot(log(p.age), xlab = "Age")
+```
+```{r}
+plot(log(p.sex), xlab = "Sex")
+```
+```{r}
+#reset the level of age by 10yrs
+levels(Age) <- c(rep("0-12",10), rep("13-18", 6), "19-29", "0-12", rep("19-29",10), "0-12", rep("30-59", 10), "0-12", rep("30-59", 10), "0-12", rep("30-59",10), "0-12", rep("60-",8), "0-12", rep("60-",3), "0-12", "0-12")
+
+plot(tapply(Survived, Age, FUN = sum))
+```
+```{r}
+#Model Fit
+Tdata$PClassR <- relevel(Tdata$PClass, ref=3)
+m.logit <- glm(Survived~Age+ Sex + Tdata$PClassR, family = binomial(link = "logit"))
+summary(m.logit)
+```
+```{r}
+m.int <- glm(Survived~Age.int+Sex+Tdata$PClassR, family = binomial(link = "logit"))
+summary(m.int)
+```
+```{r}
+anova(m.int,m.logit, test = "Chisq")
+```
+```{r}
+#missing value
+library(rms)
+library(Hmisc)
+sum(is.na(Tdata$Age))/1313
+a <- aregImpute(~Age.int+Sex+PClass+Survived, n.impute = 40, nk = 5, pr=F)
+plot(a)
+Ecdf(Age.int, add = TRUE, col = 'grey', lwd = 2, subtitles = FALSE)
+```
+```{r}
+#calculate means of imputed values for age
+imp.age.mean <- apply(a$imputed$Age.int, 1, mean)
+imp.age.idx <- as.integer(names(imp.age.mean))
+
+#replace original NA with imputed means
+Age.impute <- Age.int
+Age.impute[imp.age.idx] <- imp.age.mean
+```
+
+```{r}
+#prepare new age factor model
+labeling <- function(x){
+  if(x <= 12){x <- "0-12"}
+  else if (x <= 18){x <- "13-18"}
+  else if (x <= 29){x <- "19-29"}
+  else if (x <= 59){x <- "30-59"}
+  else {x <- "60-"}
+}
+
+Age.impute.factor <- unlist(lapply(Age.impute, labeling))
+```
+
+```{r}
+#fit new models 
+newfit.factor <- glm(Survived~Age.impute.factor+Sex+Tdata$PClassR, family = binomial(link = "logit"))
+summary(newfit.factor)
+
+newfit.integer <- glm(Survived~Age.impute+Sex+Tdata$PClassR, family = binomial(link = "logit"))
+summary(newfit.integer)
+```
+```{r}
+anova(newfit.integer, newfit.factor, test = "Chisq")
+```
+```{r}
+summary(m.logit, dispersion = 1.106653)
+summary(newfit.factor, dispersion = 1.082273)
+```
+
+
+```{r}
+#model Assessment
+pres.logit <- residuals(m.logit, type = "pearson")
+(disp.logit <- sum((pres.logit^2)/746))
+
+pres.newlogit <- residuals(newfit.factor,type = "pearson")
+(disp.newlogit <- sum((pres.newlogit^2)/1306))
+```
+```{r}
+p.logit <- predict(m.logit, type = "response")
+p.impute.logit <- predict(newfit.factor, type = "response")
+
+dres.logit <- residuals(m.logit, type = "deviance")
+dres.newlogit <- residuals(newfit.factor,type = "deviance")
+par(mfrow = c(1,2))
+plot(p.logit, dres.logit, col = c("blue", "red"))
+abline(h=0,lty=2,col="grey")
+lines(lowess(p.logit,dres.logit),col="black",lwd=2)
+
+
+plot(p.impute.logit,dres.newlogit, col = c("blue", "red"))
+abline(h=0,lty=2,col="grey")
+lines(lowess(p.impute.logit,dres.newlogit),col="black",lwd=2)
+```
+```{r}
+plot(Sex:PClass,p.impute.logit)
+```
+```{r}
+plot(Sex[which(is.na(Age.int) == FALSE)]:PClass[which(is.na(Age.int) == FALSE)],p.logit)
+```
+
+
+
+
+
+
+
+
+
+
+
